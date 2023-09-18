@@ -1,0 +1,422 @@
+/**
+ * 由于微信 浮窗事件 与 裁剪框交互存在冲突，取消关于裁剪框交互计划
+ */
+
+var main = null, cutter = null, image = null, maskList = [], ctrlList = [], lineList = [];
+
+var isReady = false
+
+var pageWidth = 0, pageHeight = 0;
+var targetSize = 300;
+
+var imageStyleState = {}, cutterStyleState = {};
+
+// image object global variable
+var lastX = 0, lastY = 0;
+var startDistance = 1, currentDistance = 1;
+var minScale = 1, maxScale = 3, lastScale = 1;
+var deltaX = 0, deltaY = 0; // 当前位移的x,y坐标增量
+
+// image parent object global variable
+var rotate = 360
+
+var resetPosFlag = false, maskClear = false
+
+var targetHandler = null
+
+// 计算当前手指的距离
+function getDistance(event) {
+  var x = (event.touches[1].pageX - event.touches[0].pageX);
+  var y = (event.touches[1].pageY - event.touches[0].pageY);
+  return Math.sqrt(x * x + y * y);
+}
+
+function _init(event, ownerInstance) {
+  main = ownerInstance.selectComponent('.a-image-cropper')
+  cutter = ownerInstance.selectComponent('.a-image-cropper__cutter')
+  image = ownerInstance.selectComponent('#a-image-cropper__image')
+  maskList = ownerInstance.selectAllComponents('.a-image-cropper__mask')
+  ctrlList = ownerInstance.selectAllComponents('.a-image-cropper__ctrl-btn')
+  lineList = ownerInstance.selectAllComponents('.a-image-cropper__cutter-item')
+
+  var mainStyle = main.getComputedStyle(['width', 'height'])
+  pageWidth = parseFloat(mainStyle.width.replace('px', ''))
+  pageHeight = parseFloat(mainStyle.height.replace('px', ''))
+
+  targetSize = pageWidth - 40
+
+  var imageWidth = parseFloat(event.detail.width)
+  var imageHeight = parseFloat(event.detail.height)
+
+  var width = pageWidth
+  var height = pageWidth * imageHeight / imageWidth
+
+  // 第一价段：调整图片大小使其完全展示在屏幕中，并且使裁剪框完全覆盖图片
+
+  imageStyleState.width = width
+  imageStyleState.height = height
+  imageStyleState.transition = 'all .3s linear'
+
+  setStyle(image, imageStyleState)
+
+  cutterStyleState.width = width
+  cutterStyleState.height = height
+  cutterStyleState.transition = 'all .3s linear'
+
+  setStyle(cutter, cutterStyleState)
+
+  // 第二阶段：调整裁剪框至目标大小，并使图片适应裁剪框
+
+  ownerInstance.setTimeout(function () {
+    var coe = targetSize / Math.min(width, height)
+    imageStyleState.width = parseFloat((width * coe).toFixed(2))
+    imageStyleState.height = parseFloat((height * coe).toFixed(2))
+    imageStyleState.transition = 'all .3s linear'
+
+    setStyle(image, imageStyleState)
+
+    cutterStyleState.width = targetSize
+    cutterStyleState.height = targetSize
+    cutterStyleState.transition = 'all .3s linear'
+    setStyle(cutter, cutterStyleState)
+    hiddenLine()
+    isReady = true
+  }, 1000)
+}
+
+function _ontouchstart(event) {
+  if (!isReady) return;
+  resetPosFlag = false
+  if (event.touches.length > 1) {
+    lastX = event.touches[0].pageX
+    lastY = event.touches[0].pageY
+    startDistance = getDistance(event)
+    targetHandler = imageMoveHandler
+    return
+  }
+
+  lastX = event.touches[0].pageX
+  lastY = event.touches[0].pageY
+  targetHandler = imageMoveHandler
+  return false
+}
+
+function _ontouchmove(event, ownerInstance) {
+  if (!isReady) return;
+  // 清除 mask
+  if (!maskClear) {
+    clearMask()
+    showLine()
+  }
+
+  targetHandler(event)
+
+  return false
+}
+
+function _ontouchend(event, ownerInstance) {
+  if (!isReady) return;
+  if (event.touches.length === 0) {
+    resetPos(ownerInstance)
+    maskClear = false
+    setMask()
+    hiddenLine()
+  }
+  return false
+}
+
+function imageMoveHandler(event) {
+  // 处理缩放
+  if (event.touches.length > 1) {
+    currentDistance = getDistance(event)
+    var damp = 0.005
+    var deltaScale = (currentDistance - startDistance) * damp;
+    lastScale += deltaScale
+    imageStyleState.scale = lastScale = Math.min(maxScale, Math.max(minScale, lastScale))
+    startDistance = currentDistance
+  }
+
+  delete imageStyleState.transition
+
+  setStyle(image, imageStyleState)
+
+  var dampX = 1 / lastScale
+  var dampY = 1 / lastScale
+  var imageRect = image.getBoundingClientRect()
+  var cutterRect = cutter.getBoundingClientRect()
+
+  // 处理图片越界
+  if (imageRect.left > cutterRect.left + 10 || imageRect.right < cutterRect.right - 10) {
+    dampX = (pageWidth / 2) / (pageWidth / 2 + Math.abs(deltaX)) * 0.5
+  }
+
+  if (imageRect.top > cutterRect.top + 10 || imageRect.bottom < cutterRect.bottom - 10) {
+    dampY = (pageHeight / 2) / (pageHeight / 2 + Math.abs(deltaY)) * 0.3
+  }
+
+  var currentX = event.touches[0].pageX; // 记录当前手指信息
+  var currentY = event.touches[0].pageY;
+
+  // 处理双指变单指瞬移的问题
+  if (Math.abs(lastX - currentX) > 30 || Math.abs(lastY - currentY) > 30) {
+    dampX = 0.0001
+    dampY = 0.0001
+  }
+
+  // 处理父元素旋转后坐标变换
+  switch (rotate) {
+    case 360:
+      deltaX += (currentX - lastX) * dampX; // 记录当前位移的增量
+      deltaY += (currentY - lastY) * dampY;
+      break;
+    case 90:
+      deltaX += (currentY - lastY) * dampY;
+      deltaY += (lastX - currentX) * dampX;
+      break;
+    case 180:
+      deltaX += (lastX - currentX) * dampX;
+      deltaY += (lastY - currentY) * dampY;
+      break;
+    case 270:
+      deltaX += (lastY - currentY) * dampY;
+      deltaY += (currentX - lastX) * dampX;
+      break;
+  }
+
+  imageStyleState.x = deltaX
+  imageStyleState.y = deltaY
+  lastX = currentX; // 更新最后一次手指信息
+  lastY = currentY;
+}
+
+function _onRotate(event, ownerInstance) {
+  if (!isReady) return;
+  var comp = ownerInstance.selectComponent('.a-image-cropper__image-wrap')
+  rotate += 90
+  if (rotate > 360) {
+    rotate = 90
+    comp.setStyle({})
+    ownerInstance.setTimeout(function () {
+      comp.setStyle({
+        transform: 'rotate' + '(' + 90 + 'deg' + ')',
+        transition: 'transform .3s linear'
+      })
+    }, 0)
+    return;
+  }
+
+  comp.setStyle({
+    transform: 'rotate' + '(' + rotate + 'deg' + ')',
+    transition: 'transform .3s linear'
+  })
+}
+
+function _onReset(event, ownerInstance) {
+  if (!isReady) return;
+  image.setStyle({})
+  ownerInstance.setTimeout(function () {
+    imageStyleState.x = 0
+    imageStyleState.y = 0
+    imageStyleState.scale = 0
+    setStyle(image, imageStyleState)
+  }, 0)
+  deltaX = 0
+  deltaY = 0
+  lastScale = 1
+  lastX = 0
+  lastY = 0
+  startDistance = 1
+  currentDistance = 1
+  rotate = 360
+  resetPosFlag = false
+  var comp = ownerInstance.selectComponent('.a-image-cropper__image-wrap')
+  comp.setStyle({})
+}
+
+function _oncancel(event, ownerInstance) {
+  _onReset(event, ownerInstance)
+  ownerInstance.triggerEvent('oncancel', {})
+}
+
+function _onsubmit(event, ownerInstance) {
+  if (!isReady) return;
+  var imageRect = image.getBoundingClientRect()
+  var cutterRect = cutter.getBoundingClientRect()
+  imageRect.rotate = rotate
+  ownerInstance.callMethod('_onsubmit', {
+    cutterRect: cutterRect,
+    imageRect: imageRect
+  })
+}
+
+function resetPos(ownerInstance) {
+  if (resetPosFlag) return;
+  var imageRect = image.getBoundingClientRect()
+  var cutterRect = cutter.getBoundingClientRect()
+
+  var x = 0, y = 0;
+
+  switch (rotate) {
+    case 360:
+      if (imageRect.left > cutterRect.left) {
+        x = (cutterRect.left - imageRect.left)
+      }
+
+      if (imageRect.top > cutterRect.top) {
+        y = cutterRect.top - imageRect.top
+      }
+
+      if (imageRect.right < cutterRect.right) {
+        x = cutterRect.right - imageRect.right
+      }
+
+      if (imageRect.bottom < cutterRect.bottom) {
+        y = cutterRect.bottom - imageRect.bottom
+      }
+      break;
+    case 90:
+      if (imageRect.left > cutterRect.left) {
+        y = imageRect.left - cutterRect.left
+      }
+
+      if (imageRect.top > cutterRect.top) {
+        x = cutterRect.top - imageRect.top
+      }
+
+      if (imageRect.right < cutterRect.right) {
+        y = imageRect.right - cutterRect.right
+      }
+
+      if (imageRect.bottom < cutterRect.bottom) {
+        x = cutterRect.bottom - imageRect.bottom
+      }
+      break;
+    case 180:
+      if (imageRect.left > cutterRect.left) {
+        x = imageRect.left - cutterRect.left
+      }
+
+      if (imageRect.top > cutterRect.top) {
+        y = imageRect.top - cutterRect.top
+      }
+
+      if (imageRect.right < cutterRect.right) {
+        x = imageRect.right - cutterRect.right
+      }
+
+      if (imageRect.bottom < cutterRect.bottom) {
+        y = imageRect.bottom - cutterRect.bottom
+      }
+      break;
+    case 270:
+      if (imageRect.left > cutterRect.left) {
+        y = cutterRect.left - imageRect.left
+      }
+
+      if (imageRect.top > cutterRect.top) {
+        x = imageRect.top - cutterRect.top
+      }
+
+      if (imageRect.right < cutterRect.right) {
+        y = cutterRect.right - imageRect.right
+      }
+
+      if (imageRect.bottom < cutterRect.bottom) {
+        x = imageRect.bottom - cutterRect.bottom
+      }
+      break;
+  }
+
+  imageStyleState.scale = lastScale
+  deltaX += x / lastScale
+  deltaY += y / lastScale
+  imageStyleState.x = deltaX
+  imageStyleState.y = deltaY
+
+  setStyle(image, imageStyleState)
+
+  // 递归调用解决一次计算误差问题
+  ownerInstance.setTimeout(function () {
+    resetPos(ownerInstance)
+    resetPosFlag = true
+  }, 100)
+}
+
+function setStyle(target, state) {
+  var scale = state.scale || 1
+  var x = state.x || 0
+  var y = state.y || 0
+  var rotate = state.rotate || 0
+  var style = {
+    width: state.width + 'px',
+    height: state.height + 'px',
+    transform:
+      'scale' + '(' + scale + ')' + ' ' +
+      'translate' + '(' + x + 'px' + ', ' + y + 'px' + ')' + ' ' +
+      'rotateZ' + '(' + rotate + 'deg' + ')',
+    'transform-origin': state.transformOrigin || '50% 50%',
+    transition: state.transition || ''
+  }
+
+  target.setStyle(style)
+}
+
+function clearMask() {
+  maskClear = true
+  var list = maskList.concat(ctrlList)
+  for (var i = 0; i < list.length; i++) {
+    list[i].setStyle({
+      visibility: 'hidden',
+      transition: 'all .3s linear'
+    })
+  }
+}
+
+function setMask() {
+  var list = maskList.concat(ctrlList)
+  for (var i = 0; i < list.length; i++) {
+    list[i].setStyle({
+      visibility: 'visible',
+      transition: 'all .3s linear'
+    })
+  }
+}
+
+function hiddenLine() {
+  var i = 0, len = lineList.length
+  for (i; i < len; i++) {
+    lineList[i].setStyle({
+      visibility: 'hidden',
+      transition: 'all .3s linear'
+    })
+  }
+}
+
+function showLine() {
+  var i = 0, len = lineList.length
+  for (i; i < len; i++) {
+    lineList[i].setStyle({
+      visibility: 'visible',
+      transition: 'all .3s linear'
+    })
+  }
+}
+
+function enlarge() {
+  if (!isReady) return;
+  imageStyleState.scale = lastScale = 0.3 + lastScale
+
+  setStyle(image, imageStyleState)
+}
+
+module.exports = {
+  init: _init,
+  ontouchstart: _ontouchstart,
+  ontouchmove: _ontouchmove,
+  ontouchend: _ontouchend,
+  onRotate: _onRotate,
+  onReset: _onReset,
+  onsubmit: _onsubmit,
+  oncancel: _oncancel,
+  enlarge: enlarge
+}

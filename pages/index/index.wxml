@@ -1,0 +1,4 @@
+<view class="page-main">
+  <view class="choose-wrap" bind:tap="chooseMedia">选择图片</view>
+  <a-image-cropper show="{{ show }}" src="{{ src }}" bind:oncancel="oncancel" bind:onsubmit="onsubmit" />
+</view>

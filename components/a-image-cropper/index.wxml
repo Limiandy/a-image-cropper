@@ -1,0 +1,52 @@
+<wxs src="index.wxs" module="middleware"></wxs>
+
+<view class="a-image-cropper" wx:if="{{ show }}">
+    <view
+            class="a-image-cropper__main"
+            catch:touchstart="{{ middleware.ontouchstart }}"
+            catch:touchmove="{{ middleware.ontouchmove }}"
+            catch:touchend="{{ middleware.ontouchend }}"
+    >
+        <view class="a-image-cropper__image-wrap">
+            <image
+                    id="a-image-cropper__image"
+                    src="{{ src }}"
+                    bind:load="{{ middleware.init }}"
+                    style="position: absolute;"
+            />
+        </view>
+
+        <view class="a-image-cropper__cutter-wrap">
+            <view class="a-image-cropper__mask"></view>
+            <view style="display: flex;">
+                <view class="a-image-cropper__mask"></view>
+                <view class="a-image-cropper__cutter">
+                    <view class="a-image-cropper__cutter-item"></view>
+                    <view class="a-image-cropper__cutter-item"></view>
+                    <view class="a-image-cropper__cutter-item"></view>
+                    <view class="a-image-cropper__cutter-item"></view>
+                    <view class="a-image-cropper__cutter-item"></view>
+                    <view class="a-image-cropper__cutter-item"></view>
+                    <view class="a-image-cropper__cutter-item"></view>
+                    <view class="a-image-cropper__cutter-item"></view>
+                    <view class="a-image-cropper__cutter-item"></view>
+                </view>
+                <view class="a-image-cropper__mask"></view>
+            </view>
+            <view class="a-image-cropper__mask"></view>
+        </view>
+        <canvas id="a-image-cropper__canvas" type="2d" class="a-image-cropper__canvas"></canvas>
+    </view>
+
+    <view class="a-image-cropper__bottom">
+        <view class="a-image-cropper__ctrl">
+            <view class="a-image-cropper__ctrl-btn" style="width: 20px; height: 30px;" catch:tap="{{ middleware.onRotate }}">
+                <image src="rotate-right.svg" mode="aspectFit" style="width: 100%; height: 100%;"></image>
+            </view>
+            <view class="a-image-cropper__ctrl-btn" catch:tap="{{ middleware.onReset }}">还原</view>
+        </view>
+        <view catch:tap="{{ middleware.oncancel }}">取消</view>
+<!--        <view catch:tap="{{ middleware.enlarge }}">放大</view>-->
+        <view catch:tap="{{ middleware.onsubmit}}">完成</view>
+    </view>
+</view>

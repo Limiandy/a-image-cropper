@@ -1,0 +1,5 @@
+{
+  "usingComponents": {
+    "a-image-cropper": "/components/a-image-cropper/index"
+  }
+}
