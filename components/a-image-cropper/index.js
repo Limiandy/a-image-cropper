@@ -89,7 +89,12 @@ Component({
               data,
               encoding: 'base64',
               success: () => {
-                this.triggerEvent('onsubmit', { url: filePath })
+                fs.getFileInfo({
+                  filePath,
+                  success: ({ size, digest }) => {
+                    this.triggerEvent('onsubmit', { filePath, digest, size })
+                  }
+                })
               },
               fail(res) {
                 console.log('error: ', res)

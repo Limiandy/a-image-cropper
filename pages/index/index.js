@@ -25,9 +25,9 @@ Page({
   },
 
   onsubmit({ detail }) {
-    const { url } = detail
+    const { filePath, size } = detail
     wx.previewImage({
-      urls: [url]
+      urls: [filePath]
     })
   }
 })
