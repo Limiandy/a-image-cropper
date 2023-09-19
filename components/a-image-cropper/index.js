@@ -1,7 +1,5 @@
 Component({
-  options: {
-    styleIsolation: 'isolated'
-  },
+  styleIsolation: 'isolated',
   properties: {
     show: {
       type: Boolean,
